@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  universal-infra-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: universal-infra-mcp:latest
+    container_name: universal-infra-mcp
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

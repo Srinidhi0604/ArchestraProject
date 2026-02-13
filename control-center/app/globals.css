@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* ROOT                                                                */
+/* ------------------------------------------------------------------ */
+:root {
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #d6e2ff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ------------------------------------------------------------------ */
+/* CESIUM OVERRIDES — fill entire viewport                             */
+/* ------------------------------------------------------------------ */
+.cesium-viewer,
+.cesium-viewer-cesiumWidgetContainer,
+.cesium-widget,
+.cesium-widget canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cesium-viewer-toolbar,
+.cesium-viewer-animationContainer,
+.cesium-viewer-timelineContainer,
+.cesium-viewer-bottom,
+.cesium-viewer-fullscreenContainer {
+  display: none !important;
+}
+
+.cesium-credit-logoContainer,
+.cesium-credit-expand-link {
+  opacity: 0.25 !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* GLASS PANEL — floating UI panels                                    */
+/* ------------------------------------------------------------------ */
+.glass-panel {
+  background: rgba(10, 22, 40, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  box-shadow:
+    0 0 40px rgba(0, 20, 60, 0.5),
+    0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* backward compat for error.tsx */
+.control-panel {
+  background: rgba(10, 22, 40, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+}
+
+/* ------------------------------------------------------------------ */
+/* SCROLLBAR                                                           */
+/* ------------------------------------------------------------------ */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
