@@ -1,4 +1,3 @@
-"""FastAPI wrapper for universal infrastructure MCP server."""
 from __future__ import annotations
 
 import logging
@@ -10,9 +9,10 @@ import anyio
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from server import mcp, simulation_engine
+from core.infra_registry import InfrastructureStateRegistry
+from servers.hydro_server import DOMAIN_FILTER, mcp
 
-logger = logging.getLogger("universal-infra.app")
+logger = logging.getLogger("hydro-infra.app")
 logger.addHandler(logging.StreamHandler(sys.stderr))
 logger.setLevel(logging.INFO)
 
@@ -21,14 +21,14 @@ logger.setLevel(logging.INFO)
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     async with anyio.create_task_group() as tg:
         mcp.session_manager._task_group = tg  # type: ignore[attr-defined]
-        logger.info("Universal Infrastructure MCP server starting")
-        logger.info("MCP endpoint: http://localhost:8010/mcp")
+        logger.info("Hydro Infrastructure MCP server starting")
+        logger.info("MCP endpoint: http://localhost:8002/mcp")
         yield
-        logger.info("Universal Infrastructure MCP server shutting down")
+        logger.info("Hydro Infrastructure MCP server shutting down")
 
 
 app = FastAPI(
-    title="Universal Infrastructure MCP",
+    title="Hydro Infrastructure MCP",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -36,30 +36,25 @@ app = FastAPI(
 
 @app.get("/")
 async def root() -> JSONResponse:
-    systems = await simulation_engine.get_systems()
-    return JSONResponse(content={
-        "service": "Universal Infrastructure MCP",
-        "version": "1.0.0",
-        "systems_count": len(systems),
-        "system_types": sorted({system.system_type for system in systems}),
-        "endpoints": {
-            "mcp": "/mcp",
-            "systems": "tool:get_systems",
-            "state": "tool:get_system_state",
-            "risk": "tool:evaluate_system_risk",
-            "control": "tool:execute_control_action",
-        },
-    })
+    return JSONResponse(
+        content={
+            "service": "Hydro Infrastructure MCP",
+            "version": "1.0.0",
+            "domain": DOMAIN_FILTER,
+            "endpoints": {"mcp": "/mcp", "health": "/healthz", "systems": "/systems"},
+        }
+    )
 
 
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
-    return JSONResponse(content={"status": "ok"})
+    return JSONResponse(content={"status": "ok", "domain": DOMAIN_FILTER})
 
 
 @app.get("/systems")
 async def systems() -> JSONResponse:
-    systems = await simulation_engine.get_systems()
+    registry = await InfrastructureStateRegistry.get_instance()
+    systems = await registry.get_systems(domain_filter=DOMAIN_FILTER)
     payload = [
         {
             "system_id": system.system_id,

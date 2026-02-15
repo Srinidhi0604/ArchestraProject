@@ -1,12 +1,35 @@
 version: "3.9"
 
 services:
-  universal-infra-mcp:
+  power-infra-mcp:
     build:
       context: .
       dockerfile: Dockerfile
     image: universal-infra-mcp:latest
-    container_name: universal-infra-mcp
+    container_name: power-infra-mcp
+    command: ["python", "run_power_mcp.py"]
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  hydro-infra-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: universal-infra-mcp:latest
+    container_name: hydro-infra-mcp
+    command: ["python", "run_hydro_mcp.py"]
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  sewage-infra-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: universal-infra-mcp:latest
+    container_name: sewage-infra-mcp
+    command: ["python", "run_sewage_mcp.py"]
     stdin_open: true
     tty: true
     restart: unless-stopped

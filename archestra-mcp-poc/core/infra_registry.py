@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import math
-import random
+import logging
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,47 +21,95 @@ from models import (
     TopologyGraph,
 )
 
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+logger = logging.getLogger("infra-registry")
 
-class UniversalSimulationEngine:
+
+class InfrastructureStateRegistry:
+    _instance: InfrastructureStateRegistry | None = None
+    _lock = asyncio.Lock()
+
     def __init__(self) -> None:
         self._systems: dict[str, SystemModel] = {}
         self._component_index: dict[str, str] = {}
-        self._lock = asyncio.Lock()
-        self._random = random.Random(42)
+        self._random_seed = 42
+        import random
+        self._random = random.Random(self._random_seed)
         self._last_tick = datetime.now(timezone.utc)
+        self._domain_types = {
+            "power": "power_grid",
+            "hydro": "hydro_plant",
+            "sewage": "sewage_plant",
+        }
 
-    def initialize_sample_systems(self) -> None:
+    @classmethod
+    async def get_instance(cls) -> InfrastructureStateRegistry:
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+                cls._instance._initialize_sample_systems()
+            return cls._instance
+
+    def resolve_domain_filter(self, domain_filter: str) -> str:
+        normalized = domain_filter.strip().lower()
+        if normalized in self._domain_types:
+            return self._domain_types[normalized]
+        if normalized in self._domain_types.values():
+            return normalized
+        raise ValueError(
+            f"Unknown domain filter: {domain_filter}. "
+            f"Available keys: {list(self._domain_types.keys())}, "
+            f"values: {list(self._domain_types.values())}"
+        )
+
+    def _normalize_domain_filter(self, domain_filter: str | None) -> str | None:
+        if domain_filter is None:
+            return None
+        return self.resolve_domain_filter(domain_filter)
+
+    def _validate_system_domain(self, system: SystemModel, domain_filter: str | None) -> None:
+        normalized_filter = self._normalize_domain_filter(domain_filter)
+        if normalized_filter and system.system_type != normalized_filter:
+            raise KeyError(f"System {system.system_id} does not belong to domain {normalized_filter}")
+
+    def _initialize_sample_systems(self) -> None:
         systems = self._build_required_infrastructure_systems()
-
         for system in systems:
             self._systems[system.system_id] = system
             for component in system.components:
                 self._component_index[component.component_id] = system.system_id
+        logger.info(f"Initialized {len(systems)} sample systems")
 
     def _build_required_infrastructure_systems(self) -> list[SystemModel]:
         return [
-            self._build_power_grid(system_id="grid_001", name="North Power Grid", location="North Region"),
-            self._build_power_grid(system_id="grid_002", name="South Power Grid", location="South Region"),
-            self._build_hydro_plant(system_id="hydro_001", name="Riverside Hydro Plant", location="Upper Valley"),
-            self._build_sewage_plant(system_id="sewage_001", name="Central Sewage Plant", location="Industrial Zone"),
-            self._build_substation(system_id="substation_001", name="Main Substation", location="Electronic Corridor"),
-            self._build_data_center(system_id="data_center_001", name="Primary Data Center", location="Tech Park"),
+            self._build_power_grid("grid_001", "North Power Grid", "North Region"),
+            self._build_power_grid("grid_002", "South Power Grid", "South Region"),
+            self._build_hydro_plant("hydro_001", "Riverside Hydro Plant", "Upper Valley"),
+            self._build_sewage_plant("sewage_001", "Central Sewage Plant", "Industrial Zone"),
+            self._build_substation("substation_001", "Main Substation", "Electronic Corridor"),
+            self._build_data_center("data_center_001", "Primary Data Center", "Tech Park"),
         ]
 
-    async def get_systems(self) -> list[SystemModel]:
+    async def get_systems(self, domain_filter: str | None = None) -> list[SystemModel]:
         async with self._lock:
             self._tick_locked()
-            return [system.model_copy(deep=True) for system in self._systems.values()]
+            systems = list(self._systems.values())
+            normalized_filter = self._normalize_domain_filter(domain_filter)
+            if normalized_filter:
+                systems = [s for s in systems if s.system_type == normalized_filter]
+            return [s.model_copy(deep=True) for s in systems]
 
-    async def get_system_state(self, system_id: str) -> SystemModel:
+    async def get_system_state(self, system_id: str, domain_filter: str | None = None) -> SystemModel:
         async with self._lock:
             self._tick_locked()
             system = self._systems.get(system_id)
             if system is None:
                 raise KeyError(f"System not found: {system_id}")
+            self._validate_system_domain(system, domain_filter)
+            
             return system.model_copy(deep=True)
 
-    async def get_component_state(self, component_id: str) -> Component:
+    async def get_component_state(self, component_id: str, domain_filter: str | None = None) -> Component:
         async with self._lock:
             self._tick_locked()
             system_id = self._component_index.get(component_id)
@@ -69,26 +117,31 @@ class UniversalSimulationEngine:
                 raise KeyError(f"Component not found: {component_id}")
 
             system = self._systems[system_id]
+            self._validate_system_domain(system, domain_filter)
+
             for component in system.components:
                 if component.component_id == component_id:
                     return component.model_copy(deep=True)
 
             raise KeyError(f"Component not found: {component_id}")
 
-    async def get_system_topology(self, system_id: str) -> TopologyGraph:
+    async def get_system_topology(self, system_id: str, domain_filter: str | None = None) -> TopologyGraph:
         async with self._lock:
             self._tick_locked()
             system = self._systems.get(system_id)
             if system is None:
                 raise KeyError(f"System not found: {system_id}")
+            self._validate_system_domain(system, domain_filter)
+            
             return system.topology_graph.model_copy(deep=True)
 
-    async def evaluate_system_risk(self, system_id: str) -> RiskEvaluation:
+    async def evaluate_system_risk(self, system_id: str, domain_filter: str | None = None) -> RiskEvaluation:
         async with self._lock:
             self._tick_locked()
             system = self._systems.get(system_id)
             if system is None:
                 raise KeyError(f"System not found: {system_id}")
+            self._validate_system_domain(system, domain_filter)
 
             risk_state = self._compute_risk_state(system)
             system.risk_state = risk_state
@@ -107,12 +160,14 @@ class UniversalSimulationEngine:
         system_id: str,
         action_type: str,
         parameters: dict[str, Any],
+        domain_filter: str | None = None,
     ) -> ControlActionResult:
         async with self._lock:
             self._tick_locked()
             system = self._systems.get(system_id)
             if system is None:
                 raise KeyError(f"System not found: {system_id}")
+            self._validate_system_domain(system, domain_filter)
 
             action = action_type.lower().strip()
             if not action:
@@ -349,6 +404,8 @@ class UniversalSimulationEngine:
                 system.risk_state = self._compute_risk_state(system)
 
     def _simulate_system_once(self, system: SystemModel) -> None:
+        import math
+
         for component in system.components:
             if component.operational_state == OperationalState.OFFLINE:
                 continue
@@ -372,6 +429,8 @@ class UniversalSimulationEngine:
                     component.health_status = HealthStatus.HEALTHY
 
     def _simulate_power_component(self, component: Component) -> None:
+        import math
+
         oscillation = 0.5 + 0.5 * math.sin(datetime.now(timezone.utc).timestamp() / 30.0)
         base = component.capacity * (0.55 + 0.3 * oscillation)
         noise = self._random.uniform(-2.5, 2.5)

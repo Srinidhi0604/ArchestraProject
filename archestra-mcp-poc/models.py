@@ -106,4 +106,10 @@ class ControlActionResult(BaseModel):
     impacted_components: list[str] = Field(default_factory=list)
     before: dict[str, Any] = Field(default_factory=dict)
     after: dict[str, Any] = Field(default_factory=dict)
+    action_performed: str | None = None
+    target_system_id: str | None = None
+    affected_components: list[dict[str, Any]] = Field(default_factory=list)
+    state_before_action: dict[str, Any] = Field(default_factory=dict)
+    state_after_action: dict[str, Any] = Field(default_factory=dict)
+    execution_status: str = "unknown"
     executed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
