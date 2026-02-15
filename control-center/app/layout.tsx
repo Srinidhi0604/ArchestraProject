@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Universal Infrastructure Control Center",
-  description: "Archestra infrastructure orchestration frontend",
+  title: "SENTINEL — Autonomous Infrastructure Control",
+  description: "Real-time infrastructure monitoring, incident visualization, and autonomous orchestration powered by Archestra A2A.",
 };
 
 export default function RootLayout({

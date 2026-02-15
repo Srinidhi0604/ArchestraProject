@@ -5,8 +5,10 @@ import {
   InfrastructureSystem,
   SystemType,
   statusColor,
+  systemTypeLabels,
 } from "@/lib/infrastructure";
-import { useEffect, useRef } from "react";
+import { toCanonicalSystemId } from "@/lib/archestra";
+import { useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -15,11 +17,24 @@ interface MapViewProps {
   systems: InfrastructureSystem[];
   selectedSystemId: string | null;
   resolvedSystemId?: string;
+  resolvingSystemId?: string;
   onSelectSystem: (systemId: string) => void;
   onDeselectSystem: () => void;
 }
 
 type CesiumModule = typeof import("cesium");
+
+// ---------------------------------------------------------------------------
+// Infrastructure connection topology (which systems are linked)
+// ---------------------------------------------------------------------------
+const TOPOLOGY_LINKS: [string, string][] = [
+  ["grid_001", "substation_001"],
+  ["grid_002", "substation_001"],
+  ["grid_001", "data_center_001"],
+  ["hydro_001", "grid_002"],
+  ["sewage_001", "data_center_001"],
+  ["substation_001", "data_center_001"],
+];
 
 // ---------------------------------------------------------------------------
 // Marker SVG Builder — distinctive per system type + status color
@@ -29,33 +44,28 @@ function buildMarkerSvg(
   color: string,
   isSelected: boolean,
   isCritical: boolean,
+  isResolving: boolean,
+  isResolved: boolean,
 ): string {
-  const size = isSelected ? 56 : 46;
+  const size = isSelected ? 64 : 50;
   const cx = size / 2;
   const cy = size / 2;
-  const r = isSelected ? 15 : 12;
+  const r = isSelected ? 16 : 13;
 
-  // --- Inner icon per system type ---
   let inner = "";
   switch (systemType) {
     case "power_grid": {
-      // Lightning bolt
       const d = isSelected ? 1.2 : 1;
       inner = `<polygon points="${cx - 3 * d},${cy - 8 * d} ${cx + 2 * d},${cy - 1 * d} ${cx - 1 * d},${cy - 1 * d} ${cx + 3 * d},${cy + 8 * d} ${cx - 2 * d},${cy + 1 * d} ${cx + 1 * d},${cy + 1 * d}" fill="white" opacity="0.95"/>`;
       break;
     }
-    case "hydro_plant": {
-      // Water drop
+    case "hydro_plant":
       inner = `<path d="M${cx},${cy - 7} Q${cx + 6},${cy + 2} ${cx},${cy + 7} Q${cx - 6},${cy + 2} ${cx},${cy - 7}Z" fill="white" opacity="0.95"/>`;
       break;
-    }
-    case "data_center": {
-      // Stacked servers
+    case "data_center":
       inner = `<rect x="${cx - 5}" y="${cy - 6}" width="10" height="3.5" rx="1" fill="white" opacity="0.95"/><rect x="${cx - 5}" y="${cy - 1.5}" width="10" height="3.5" rx="1" fill="white" opacity="0.8"/><rect x="${cx - 5}" y="${cy + 3}" width="10" height="3.5" rx="1" fill="white" opacity="0.65"/>`;
       break;
-    }
     case "substation": {
-      // Hexagon
       const hr = 7;
       const hexPts = Array.from({ length: 6 }, (_, i) => {
         const a = (Math.PI / 3) * i - Math.PI / 2;
@@ -65,7 +75,6 @@ function buildMarkerSvg(
       break;
     }
     case "solar_farm": {
-      // Sun + rays
       let rays = "";
       for (let i = 0; i < 8; i++) {
         const a = (Math.PI / 4) * i;
@@ -78,31 +87,43 @@ function buildMarkerSvg(
       inner = `<circle cx="${cx}" cy="${cy}" r="3.5" fill="white" opacity="0.95"/>${rays}`;
       break;
     }
-    case "sewage_plant": {
-      // Recycling circle
+    case "sewage_plant":
       inner = `<circle cx="${cx}" cy="${cy}" r="6" fill="none" stroke="white" stroke-width="1.8" opacity="0.9"/><circle cx="${cx}" cy="${cy}" r="2" fill="white" opacity="0.95"/>`;
       break;
-    }
   }
 
-  // Critical systems get animated pulse ring
-  const pulse = isCritical
-    ? `<circle cx="${cx}" cy="${cy}" r="${r + 4}" fill="none" stroke="${color}" stroke-width="1" opacity="0.5"><animate attributeName="r" from="${r + 3}" to="${r + 14}" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" from="0.5" to="0" dur="2s" repeatCount="indefinite"/></circle>`
+  // Resolving spinner ring
+  const resolvingRing = isResolving
+    ? `<circle cx="${cx}" cy="${cy}" r="${r + 6}" fill="none" stroke="#00bbff" stroke-width="2" stroke-dasharray="8 6" opacity="0.7"><animateTransform attributeName="transform" type="rotate" from="0 ${cx} ${cy}" to="360 ${cx} ${cy}" dur="1.5s" repeatCount="indefinite"/></circle>`
+    : "";
+
+  // Resolved checkmark burst
+  const resolvedBurst = isResolved
+    ? `<circle cx="${cx}" cy="${cy}" r="${r + 3}" fill="none" stroke="#00ff88" stroke-width="2" opacity="0.6"><animate attributeName="r" from="${r + 3}" to="${r + 18}" dur="1.5s" repeatCount="indefinite"/><animate attributeName="opacity" from="0.6" to="0" dur="1.5s" repeatCount="indefinite"/></circle><circle cx="${cx}" cy="${cy}" r="${r + 3}" fill="none" stroke="#00ff88" stroke-width="1.5" opacity="0.8"/>`
+    : "";
+
+  // Critical pulse
+  const pulse = isCritical && !isResolved
+    ? `<circle cx="${cx}" cy="${cy}" r="${r + 4}" fill="none" stroke="${color}" stroke-width="1.2" opacity="0.5"><animate attributeName="r" from="${r + 3}" to="${r + 16}" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" from="0.5" to="0" dur="2s" repeatCount="indefinite"/></circle>`
     : "";
 
   const selectedRing = isSelected
-    ? `<circle cx="${cx}" cy="${cy}" r="${r + 2}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-dasharray="3 2"/>`
+    ? `<circle cx="${cx}" cy="${cy}" r="${r + 2.5}" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.8" stroke-dasharray="4 3"><animateTransform attributeName="transform" type="rotate" from="0 ${cx} ${cy}" to="-360 ${cx} ${cy}" dur="8s" repeatCount="indefinite"/></circle>`
     : "";
+
+  const effectiveColor = isResolved ? "#00ff88" : color;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
 <defs>
   <filter id="g"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  <radialGradient id="rg"><stop offset="0%" stop-color="${color}" stop-opacity="0.35"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></radialGradient>
+  <radialGradient id="rg"><stop offset="0%" stop-color="${effectiveColor}" stop-opacity="0.4"/><stop offset="100%" stop-color="${effectiveColor}" stop-opacity="0"/></radialGradient>
 </defs>
+${resolvedBurst}
+${resolvingRing}
 ${pulse}
-<circle cx="${cx}" cy="${cy}" r="${r + 5}" fill="url(#rg)"/>
-<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" filter="url(#g)" opacity="0.85"/>
-<circle cx="${cx}" cy="${cy}" r="${r - 2}" fill="#0a1628" opacity="0.55"/>
+<circle cx="${cx}" cy="${cy}" r="${r + 6}" fill="url(#rg)"/>
+<circle cx="${cx}" cy="${cy}" r="${r}" fill="${effectiveColor}" filter="url(#g)" opacity="0.88"/>
+<circle cx="${cx}" cy="${cy}" r="${r - 2}" fill="#0a1628" opacity="0.5"/>
 ${inner}
 ${selectedRing}
 </svg>`;
@@ -117,6 +138,7 @@ export function MapView({
   systems,
   selectedSystemId,
   resolvedSystemId,
+  resolvingSystemId,
   onSelectSystem,
   onDeselectSystem,
 }: MapViewProps) {
@@ -129,8 +151,8 @@ export function MapView({
   const viewerRef = useRef<import("cesium").Viewer | null>(null);
   const cesiumRef = useRef<CesiumModule | null>(null);
   const handlerRef = useRef<import("cesium").ScreenSpaceEventHandler | null>(null);
+  const [ready, setReady] = useState(false);
 
-  // Stable callback refs so Cesium init doesn't depend on callback identity
   const onSelectRef = useRef(onSelectSystem);
   const onDeselectRef = useRef(onDeselectSystem);
   useEffect(() => {
@@ -165,18 +187,14 @@ export function MapView({
         orderIndependentTranslucency: false,
       });
 
-      // Scene settings
       viewer.scene.globe.show = true;
       viewer.scene.globe.enableLighting = true;
       viewer.scene.globe.showGroundAtmosphere = true;
-      if (viewer.scene.skyAtmosphere) {
-        viewer.scene.skyAtmosphere.show = true;
-      }
+      if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
       viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
       viewer.scene.requestRenderMode = false;
       viewer.scene.fog.enabled = true;
 
-      // Google 3D Tiles if key provided
       if (hasGoogleKey && googleKey) {
         try {
           const tileset = await Cesium.Cesium3DTileset.fromUrl(
@@ -188,7 +206,6 @@ export function MapView({
         }
       }
 
-      // Camera: cinematic angle over Bengaluru
       viewer.camera.setView({
         destination: Cesium.Cartesian3.fromDegrees(77.5946, 12.9716, 28000),
         orientation: {
@@ -198,16 +215,14 @@ export function MapView({
         },
       });
 
-      // Input handlers
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 
       handler.setInputAction(
         (movement: import("cesium").ScreenSpaceEventHandler.PositionedEvent) => {
           const picked = viewer.scene.pick(movement.position);
-          const id =
-            picked && (picked as { id?: { id?: string } }).id?.id;
-          if (id) {
-            onSelectRef.current(id);
+          const id = picked && (picked as { id?: { id?: string } }).id?.id;
+          if (id && !id.startsWith("__")) {
+            onSelectRef.current(toCanonicalSystemId(id));
           } else {
             onDeselectRef.current();
           }
@@ -218,15 +233,15 @@ export function MapView({
       handler.setInputAction(
         (movement: import("cesium").ScreenSpaceEventHandler.MotionEvent) => {
           const picked = viewer.scene.pick(movement.endPosition);
-          const id =
-            picked && (picked as { id?: { id?: string } }).id?.id;
-          viewer.canvas.style.cursor = id ? "pointer" : "";
+          const id = picked && (picked as { id?: { id?: string } }).id?.id;
+          viewer.canvas.style.cursor = id && !id.startsWith("__") ? "pointer" : "";
         },
         Cesium.ScreenSpaceEventType.MOUSE_MOVE,
       );
 
       viewerRef.current = viewer;
       handlerRef.current = handler;
+      setReady(true);
     }
 
     init();
@@ -241,28 +256,68 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleKey, hasGoogleKey]);
 
-  // --- Sync entity markers ---
+  // --- Sync entity markers, labels, topology lines, threat zones ---
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
-    if (!viewer || !Cesium) return;
+    if (!viewer || !Cesium || !ready) return;
 
     viewer.entities.removeAll();
 
+    const systemMap = new Map(systems.map((s) => [toCanonicalSystemId(s.id), s]));
+
+    // Topology connection lines
+    TOPOLOGY_LINKS.forEach(([a, b], idx) => {
+      const sA = systemMap.get(a);
+      const sB = systemMap.get(b);
+      if (!sA || !sB) return;
+
+      const worst = sA.status === "critical" || sB.status === "critical"
+        ? "critical"
+        : sA.status === "risk" || sB.status === "risk"
+          ? "risk"
+          : "healthy";
+      const lineColor = Cesium.Color.fromCssColorString(statusColor[worst]).withAlpha(
+        worst === "critical" ? 0.4 : worst === "risk" ? 0.25 : 0.12,
+      );
+
+      viewer.entities.add({
+        id: `__link_${idx}`,
+        polyline: {
+          positions: [
+            Cesium.Cartesian3.fromDegrees(sA.location.lng, sA.location.lat, sA.location.alt + 50),
+            Cesium.Cartesian3.fromDegrees(sB.location.lng, sB.location.lat, sB.location.alt + 50),
+          ],
+          width: worst === "critical" ? 2.5 : 1.5,
+          material: new Cesium.PolylineDashMaterialProperty({
+            color: lineColor,
+            dashLength: worst === "critical" ? 12 : 20,
+          }),
+          clampToGround: false,
+        },
+      });
+    });
+
+    // System markers + labels
     systems.forEach((system) => {
-      const selected = system.id === selectedSystemId;
-      const resolved = system.id === resolvedSystemId;
+      const canonicalId = toCanonicalSystemId(system.id);
+      const selected = canonicalId === selectedSystemId;
+      const resolved = canonicalId === resolvedSystemId;
+      const resolving = canonicalId === resolvingSystemId;
       const isCritical = system.status === "critical";
       const color = statusColor[system.status];
-      const image = buildMarkerSvg(system.system_type, color, selected, isCritical);
+      const image = buildMarkerSvg(system.system_type, color, selected, isCritical, resolving, resolved);
       const position = Cesium.Cartesian3.fromDegrees(
         system.location.lng,
         system.location.lat,
         system.location.alt,
       );
 
+      // Status label text — always visible
+      const statusText = `${system.name}\n${system.status.toUpperCase()} · Risk ${system.risk_score}${resolving ? " · RESOLVING" : ""}${resolved ? " · STABILIZED" : ""}`;
+
       viewer.entities.add({
-        id: system.id,
+        id: canonicalId,
         position,
         billboard: {
           image,
@@ -271,29 +326,55 @@ export function MapView({
           heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
-        label: selected
-          ? {
-              text: system.name,
-              font: "13px system-ui, sans-serif",
-              fillColor: Cesium.Color.fromCssColorString("#D6E2FF"),
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 3,
-              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              verticalOrigin: Cesium.VerticalOrigin.TOP,
-              pixelOffset: new Cesium.Cartesian2(0, 30),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            }
-          : undefined,
+        label: {
+          text: statusText,
+          font: selected ? "bold 12px system-ui, sans-serif" : "11px system-ui, sans-serif",
+          fillColor: Cesium.Color.fromCssColorString(
+            resolved ? "#00ff88" : selected ? "#ffffff" : "#D6E2FF",
+          ),
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.TOP,
+          pixelOffset: new Cesium.Cartesian2(0, selected ? 36 : 30),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          showBackground: selected,
+          backgroundColor: selected
+            ? Cesium.Color.fromCssColorString("#0a1628").withAlpha(0.85)
+            : undefined,
+          backgroundPadding: selected ? new Cesium.Cartesian2(8, 5) : undefined,
+          scale: selected ? 1 : 0.9,
+        },
         point: resolved
           ? {
-              color: Cesium.Color.fromCssColorString("#00ff88").withAlpha(0.3),
-              pixelSize: 45,
+              color: Cesium.Color.fromCssColorString("#00ff88").withAlpha(0.25),
+              pixelSize: 60,
               outlineWidth: 0,
             }
           : undefined,
       });
+
+      // Threat radius zone for critical / risk systems
+      if (system.status !== "healthy" && !resolved) {
+        const threatRadius = system.status === "critical" ? 1200 : 700;
+        viewer.entities.add({
+          id: `__threat_${canonicalId}`,
+          position,
+          ellipse: {
+            semiMajorAxis: threatRadius,
+            semiMinorAxis: threatRadius,
+            material: Cesium.Color.fromCssColorString(color).withAlpha(
+              system.status === "critical" ? 0.08 : 0.04,
+            ),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString(color).withAlpha(0.2),
+            outlineWidth: 1,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          },
+        });
+      }
     });
-  }, [systems, selectedSystemId, resolvedSystemId]);
+  }, [systems, selectedSystemId, resolvedSystemId, resolvingSystemId, ready]);
 
   // --- Fly to selected entity ---
   useEffect(() => {
@@ -301,21 +382,21 @@ export function MapView({
     const Cesium = cesiumRef.current;
     if (!viewer || !Cesium || !selectedSystemId) return;
 
-    const target = systems.find((s) => s.id === selectedSystemId);
+    const target = systems.find((s) => toCanonicalSystemId(s.id) === selectedSystemId);
     if (!target) return;
 
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(
         target.location.lng,
         target.location.lat,
-        3500,
+        4500,
       ),
       orientation: {
         heading: Cesium.Math.toRadians(15),
-        pitch: Cesium.Math.toRadians(-28),
+        pitch: Cesium.Math.toRadians(-30),
         roll: 0,
       },
-      duration: 1.4,
+      duration: 1.6,
     });
   }, [selectedSystemId, systems]);
 

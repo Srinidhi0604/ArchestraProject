@@ -85,3 +85,15 @@ body {
   background: rgba(255, 255, 255, 0.12);
   border-radius: 4px;
 }
+
+/* thin scrollbar for specific panels */
+.scrollbar-control::-webkit-scrollbar {
+  width: 3px;
+}
+.scrollbar-control::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+.scrollbar-control::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}

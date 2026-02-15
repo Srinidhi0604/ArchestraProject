@@ -2,99 +2,47 @@
 
 import { motion } from "framer-motion";
 
-export type OrchestrationBadgeState =
-  | "active"
-  | "recovering"
-  | "restored"
-  | "complete";
-
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 interface ArchestraPanelProps {
-  conversationId?: string;
-  runId?: string;
-  sessionId?: string;
-  chatUrl?: string;
-  prePrompt?: string;
-  statusLabel?: string;
-  badgeState?: OrchestrationBadgeState;
+  prompt: string;
+  systemName: string;
   onOpenChat: () => void;
   onCopyPrompt: () => void;
   onClose: () => void;
-}
-
-function getBadgeConfig(state: OrchestrationBadgeState) {
-  if (state === "recovering") {
-    return {
-      label: "Recovering session…",
-      dotClassName: "bg-[#ff9500]",
-      textClassName: "text-[#ff9500]",
-    };
-  }
-
-  if (state === "restored") {
-    return {
-      label: "Session restored",
-      dotClassName: "bg-[#00bbff]",
-      textClassName: "text-[#00bbff]",
-    };
-  }
-
-  if (state === "complete") {
-    return {
-      label: "Autonomous resolution complete",
-      dotClassName: "bg-[#00ff88]",
-      textClassName: "text-[#00ff88]",
-    };
-  }
-
-  return {
-    label: "Orchestration Active",
-    dotClassName: "bg-[#00bbff]",
-    textClassName: "text-[#00bbff]",
-  };
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 export function ArchestraPanel({
-  conversationId,
-  runId,
-  sessionId,
-  chatUrl,
-  prePrompt,
-  statusLabel,
-  badgeState = "active",
+  prompt,
+  systemName,
   onOpenChat,
   onCopyPrompt,
   onClose,
 }: ArchestraPanelProps) {
-  const activeConversationId = conversationId || sessionId;
-  const canOpenChat = Boolean(chatUrl && activeConversationId);
-  const badge = getBadgeConfig(badgeState);
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 40 }}
       transition={{ type: "spring", damping: 26, stiffness: 300 }}
-      className="glass-panel fixed bottom-6 right-6 z-20 w-[310px]"
+      className="glass-panel fixed bottom-6 right-6 z-20 w-[380px] max-h-[80vh] flex flex-col"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3.5">
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3.5 shrink-0">
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wider text-white">
-            Archestra Bridge
+            Orchestration Prompt
           </h3>
           <p className="mt-0.5 text-[10px] font-medium text-[#00bbff]">
-            {statusLabel ?? "Session Active"}
+            {systemName}
           </p>
-          <div className={`mt-1.5 flex items-center gap-1.5 text-[10px] font-medium ${badge.textClassName}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${badge.dotClassName}`} />
-            <span>{badge.label}</span>
+          <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-medium text-[#00ff88]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#00ff88]" />
+            <span>Copy prompt and paste into Archestra chat</span>
           </div>
         </div>
         <button
@@ -113,54 +61,37 @@ export function ArchestraPanel({
         </button>
       </div>
 
-      {/* Session info */}
-      <div className="space-y-1.5 px-5 py-3 text-[11px]">
-        <div className="flex justify-between">
-          <span className="text-control-muted">Conversation</span>
-          <span className="max-w-[170px] truncate font-mono text-white">
-            {activeConversationId ?? "—"}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-control-muted">Run</span>
-          <span className="max-w-[170px] truncate font-mono text-white">
-            {runId ?? "—"}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-control-muted">Chat</span>
-          {chatUrl ? (
-            <a
-              href={chatUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="max-w-[170px] truncate text-[#00bbff] underline"
-            >
-              Open conversation
-            </a>
-          ) : (
-            <span className="max-w-[170px] truncate text-white">—</span>
-          )}
-        </div>
+      {/* Prompt text */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
+        <pre className="whitespace-pre-wrap break-words rounded-lg bg-black/40 border border-white/[0.06] p-3 text-[11px] leading-relaxed text-white/85 font-mono">
+          {prompt}
+        </pre>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 border-t border-white/[0.06] px-5 py-3">
-        <button
-          type="button"
-          onClick={onOpenChat}
-          disabled={!canOpenChat}
-          className="flex-1 rounded-lg border border-[#00bbff]/30 bg-[#00bbff]/15 px-3 py-2 text-xs font-semibold text-[#00bbff] transition-colors hover:bg-[#00bbff]/25"
-        >
-          Open Chat
-        </button>
+      <div className="flex gap-2 border-t border-white/[0.06] px-5 py-3 shrink-0">
         <button
           type="button"
           onClick={onCopyPrompt}
-          disabled={!prePrompt}
-          className="flex-1 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-control-text transition-colors hover:bg-white/5"
+          className="flex-1 rounded-lg border border-[#00ff88]/30 bg-[#00ff88]/15 px-3 py-2.5 text-xs font-semibold text-[#00ff88] transition-colors hover:bg-[#00ff88]/25 flex items-center justify-center gap-1.5"
         >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
           Copy Prompt
+        </button>
+        <button
+          type="button"
+          onClick={onOpenChat}
+          className="flex-1 rounded-lg border border-[#00bbff]/30 bg-[#00bbff]/15 px-3 py-2.5 text-xs font-semibold text-[#00bbff] transition-colors hover:bg-[#00bbff]/25 flex items-center justify-center gap-1.5"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+          Open Chat
         </button>
       </div>
     </motion.div>
