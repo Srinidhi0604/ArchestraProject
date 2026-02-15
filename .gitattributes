@@ -1,0 +1,25 @@
+# Git Attributes — Extra Protection Against Accidental Secrets Commit
+# This file adds defense-in-depth by marking secrets patterns as export-ignore
+
+# Prevent any actual environment files from ever being committed
+.env export-ignore
+.env.local export-ignore
+.env.*.local export-ignore
+.env.production export-ignore
+.env.*.production export-ignore
+
+# Prevent credential/secret files
+*.key export-ignore
+*.pem export-ignore
+.secrets export-ignore
+
+# Prevent database files with potentially sensitive data
+*.db export-ignore
+*.sqlite export-ignore
+*.sqlite3 export-ignore
+
+# Prevent logs with errors or sensitive info
+*.log export-ignore
+
+# Only allow .env.example as the safe template
+!.env.example
